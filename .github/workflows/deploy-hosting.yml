@@ -1,0 +1,29 @@
+name: Deploy to Firebase Hosting
+
+# Publishes the static dashboard (index.html + src/) to Firebase Hosting every time
+# you push to main - so issuing a license key (one line in index.html) goes live by itself.
+#
+# Needs ONE repository secret:  Settings -> Secrets and variables -> Actions
+#   name : FIREBASE_SERVICE_ACCOUNT
+#   value: the whole JSON of the service-account private key
+#          (Firebase console -> Project settings -> Service accounts -> Generate new private key)
+#
+# To use a different Firebase project, change projectId below.
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: optimizer4
+          channelId: live
