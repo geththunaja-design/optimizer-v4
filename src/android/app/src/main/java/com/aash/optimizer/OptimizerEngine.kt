@@ -338,7 +338,7 @@ class OptimizerEngine(private val activity: Activity, private val native: Native
             try {
                 val gm = activity.getSystemService(Context.GAME_SERVICE) as? GameManager
                 if (gm != null) {
-                    gm.gameMode = mode
+                    
                     gameMode = gm.gameMode
                 }
             } catch (t: Throwable) {
