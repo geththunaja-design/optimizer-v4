@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<meta name="theme-color" content="#05070f">
+<title>Optimizer V.4.0</title>
+</head><body>
+<style>html:not(.license-gate-ready) body > *:not(#licenseGate):not(#licenseTimerBar){ visibility:hidden !important; }</style>
+
+<script>
+window.LICENSE_CONFIG = {
+  appName: "Optimizer V.4.0",
+
+  ownerName: "Aash optimizer",
+
+  whatsapp: "94712386533",
+
+  whatsappDisplay: "+94 71 238 6533",
+
+  buyText: "Contact to buy the license key",
+
+  expiredText: "This key has been expired. Contact the optimizer to renew it.",
+
+  unknownText: "The key did not register. Please contact to the optimizer.",
+
+  revokedText: "This license key has been disabled. Please contact the optimizer.",
+
+  tamperText: "License error: your device time has been changed. Please contact the optimizer.",
+
+  promptLabel: "Enter the license key",
+
+  buttonText: "Activate",
+
+  whatsappPrefill: "Hello Aash optimizer, I want to buy a license key.",
+
+  rollbackToleranceMinutes: 10,
+
+  barMode: "overlay"
+};
+
+</script>
+<script>
+// ==============================================================================================
+//  LICENSE KEYS  -  a key can live in TWO places:
+//
+//    1. the list right below  ->  baked into this build. Works with no internet at all.
+//    2. license-keys.json     ->  downloaded every time the app starts (see LICENSE_KEYS_URLS
+//       at the bottom of this block). To issue a NEW key you normally only edit that file:
+//       no rebuild, no re-install, every already-installed app picks it up by itself.
+//
+//  hash = SHA-256 of the key AFTER removing every non-alphanumeric character and uppercasing
+//         the letters, so "OPT-FT61F-QWM6Y" and "optft61fqwm6y" are the same key. Only digests
+//         are stored - the plaintext key is never in this file.
+//  exp  = ISO date/time when the key stops working, or null for a key that never expires.
+// ==============================================================================================
+window.LICENSE_KEYS = [
+  { label: "owner", hash: "7542465ffa860f7e064012a87484faf02284619c599b8e8e42a583d1c18810df", exp: null },
+  { label: "spare-30d", hash: "002dac8339fb70b30f56f53b22603a0e0b636539022ef66f17ffd87105a34eb5", exp: "2026-10-23T09:56:49.946Z" }
+];
+
+// Where the app downloads the live key list from. All of them are tried at the same time and the
+// first one that answers wins; if none of them answer, the list above (plus the last list that was
+// downloaded) is used instead, so the app still opens with no internet at all.
+// TIP: you add keys in license-keys.json in the repo - see ADD-LICENSE-KEY.md.
+window.LICENSE_KEYS_URLS = [
+  "https://optimizerv4.web.app/license-keys.json",
+  "https://raw.githubusercontent.com/geththunaja-design/optimizer-v4/main/license-keys.json",
+  "https://cdn.jsdelivr.net/gh/geththunaja-design/optimizer-v4@main/license-keys.json"
+];
+
+</script>
+<script>
+(function () {
+  "use strict";
+
+  var DEFAULTS = {
+    appName: "License Activation",
+    ownerName: "",
+    whatsapp: "",
+    whatsappDisplay: "",
+    buyText: "Contact to buy the license key",
+    expiredText: "This key has been expired.",
+    unknownText: "The key did not register. Please contact to the optimizer.",
+    revokedText: "This license key has been disabled. Please contact the optimizer.",
+    tamperText: "License error: your device time has been changed. Please contact the optimizer.",
+    promptLabel: "Enter the license key",
+    buttonText: "Activate",
+    whatsappPrefill: "Hello, I want to buy a license key.",
+    rollbackToleranceMinutes: 10,
+    barMode: "overlay"
+  };
+
+  var CFG = {};
+  var raw = window.LICENSE_CONFIG || {};
+  for (var dk in DEFAULTS) CFG[dk] = (raw[dk] === undefined || raw[dk] === null || raw[dk] === "") ? DEFAULTS[dk] : raw[dk];
+
+  var BASE_KEYS = Array.isArray(window.LICENSE_KEYS) ? window.LICENSE_KEYS.slice() : [];
+  var KEYS = BASE_KEYS.slice();
+  var KEY_URLS = (Array.isArray(window.LICENSE_KEYS_URLS) ? window.LICENSE_KEYS_URLS : []).filter(Boolean);
+  var REVOKED = [];
+  var sync = { state: "idle", ok: false, at: 0, checkedAt: 0, source: "", count: KEYS.length };
+
+  window.__licenseState = window.__licenseState || { unlocked: false };
+
+  var READY_CLASS = "license-gate-ready";
+  var LAST_SEEN_KEY = "licenseGate.lastSeen.v1";
+  var REMEMBER_KEY = "licenseGate.rememberedKey.v1";
+  var REMOTE_CACHE = "licenseGate.remoteList.v1";
+  var TOLERANCE_MS = Math.max(1, Number(CFG.rollbackToleranceMinutes) || 10) * 60 * 1000;
+
+  var state = { exp: null, interval: null };
+
+  var STYLES = [
+    "#licenseGate{position:fixed;inset:0;z-index:2147483645;display:flex;align-items:center;justify-content:center;padding:22px;",
+    "font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
+    "background:radial-gradient(1200px 700px at 50% -10%,#1b2740 0%,#0b0f18 55%,#05070c 100%);color:#e8eefc;",
+    "-webkit-font-smoothing:antialiased;text-align:center;overflow:auto;}",
+    "#licenseGate *{box-sizing:border-box;}",
+    "#licenseGate .lg-card{width:100%;max-width:352px;background:rgba(20,26,40,.72);border:1px solid rgba(255,255,255,.09);",
+    "border-radius:20px;padding:26px 22px 20px;box-shadow:0 24px 70px rgba(0,0,0,.6),inset 0 1px 0 rgba(255,255,255,.05);",
+    "backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);}",
+    "#licenseGate .lg-lock{width:52px;height:52px;margin:0 auto 14px;border-radius:15px;display:flex;align-items:center;justify-content:center;",
+    "background:linear-gradient(150deg,#2c6df6,#7a4dfb);box-shadow:0 10px 26px rgba(70,120,255,.35);}",
+    "#licenseGate .lg-lock svg{width:26px;height:26px;fill:#fff;}",
+    "#licenseGate .lg-title{font-size:19px;font-weight:650;letter-spacing:.2px;margin:0 0 4px;}",
+    "#licenseGate .lg-sub{font-size:12.5px;color:#93a2c2;margin:0 0 20px;line-height:1.45;}",
+    "#licenseGate .lg-label{display:block;text-align:left;font-size:12.5px;color:#a9b7d6;margin:0 0 7px;font-weight:550;letter-spacing:.2px;}",
+    "#licenseGate .lg-input{width:100%;padding:13px 14px;border-radius:12px;border:1px solid rgba(255,255,255,.14);",
+    "background:rgba(8,11,18,.85);color:#f2f6ff;font-size:16px;letter-spacing:1px;outline:none;transition:border-color .15s,box-shadow .15s;}",
+    "#licenseGate .lg-input::placeholder{color:#5f6d89;letter-spacing:.4px;}",
+    "#licenseGate .lg-input:focus{border-color:#4f8dff;box-shadow:0 0 0 3px rgba(79,141,255,.18);}",
+    "#licenseGate .lg-remember{display:flex;align-items:center;gap:9px;margin:11px 0 0;text-align:left;",
+    "font-size:12.8px;color:#a9b7d6;font-weight:550;letter-spacing:.2px;cursor:pointer;user-select:none;}",
+    "#licenseGate .lg-remember input{-webkit-appearance:none;appearance:none;width:17px;height:17px;margin:0;flex:0 0 auto;",
+    "border-radius:5px;border:1.5px solid rgba(255,255,255,.28);background:rgba(8,11,18,.85);position:relative;",
+    "cursor:pointer;transition:background .15s,border-color .15s;}",
+    "#licenseGate .lg-remember input:checked{background:linear-gradient(150deg,#2f74ff,#7a4dfb);border-color:transparent;}",
+    "#licenseGate .lg-remember input:checked::after{content:'';position:absolute;left:5.5px;top:2px;width:5px;height:9px;",
+    "border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg);}",
+    "#licenseGate .lg-remember input:focus-visible{outline:2px solid rgba(79,141,255,.6);outline-offset:1px;}",
+    "#licenseGate .lg-btn{width:100%;margin-top:11px;padding:13px 16px;border:0;border-radius:12px;cursor:pointer;",
+    "background:linear-gradient(150deg,#2f74ff,#7a4dfb);color:#fff;font-size:15px;font-weight:640;letter-spacing:.3px;",
+    "box-shadow:0 10px 24px rgba(60,110,255,.3);transition:transform .12s,filter .12s;}",
+    "#licenseGate .lg-btn:hover{filter:brightness(1.08);}",
+    "#licenseGate .lg-btn:active{transform:scale(.985);}",
+    "#licenseGate .lg-btn[disabled]{opacity:.6;cursor:default;}",
+    "#licenseGate .lg-msg{min-height:18px;margin-top:12px;font-size:12.8px;line-height:1.5;text-align:left;}",
+    "#licenseGate .lg-msg--error{color:#ff9aa2;}",
+    "#licenseGate .lg-msg--ok{color:#7ee0a6;}",
+    "#licenseGate .lg-div{height:1px;background:rgba(255,255,255,.09);margin:20px 0 16px;}",
+    "#licenseGate .lg-buy-title{font-size:12.5px;color:#a9b7d6;font-weight:550;margin-bottom:10px;letter-spacing:.2px;}",
+    "#licenseGate .lg-wa{display:flex;align-items:center;justify-content:center;gap:9px;text-decoration:none;",
+    "background:linear-gradient(150deg,#1faa59,#25d366);color:#052e17;font-weight:680;font-size:15px;",
+    "padding:12px 14px;border-radius:12px;box-shadow:0 10px 22px rgba(37,211,102,.22);transition:transform .12s,filter .12s;}",
+    "#licenseGate .lg-wa:hover{filter:brightness(1.05);}",
+    "#licenseGate .lg-wa:active{transform:scale(.985);}",
+    "#licenseGate .lg-wa svg{width:19px;height:19px;fill:#052e17;}",
+    "#licenseGate .lg-owner{margin-top:11px;font-size:13px;font-weight:600;color:#e8eefc;letter-spacing:.2px;}",
+    "#licenseGate .lg-foot{margin-top:3px;font-size:11.5px;color:#7f8dab;}",
+    "#licenseTimerBar{position:fixed;top:0;left:0;right:0;z-index:2147483000;height:31px;display:flex;align-items:center;",
+    "justify-content:center;gap:8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;",
+    "font-size:12.5px;font-weight:560;letter-spacing:.3px;color:#cfe0ff;background:#0a0e17;",
+    "border-bottom:1px solid rgba(255,255,255,.09);",
+    "box-shadow:0 4px 16px rgba(0,0,0,.45);}",
+    "#licenseTimerBar .ltb-dot{width:7px;height:7px;border-radius:50%;background:#3fd07f;box-shadow:0 0 8px rgba(63,208,127,.8);}",
+    "#licenseTimerBar.ltb-urgent{color:#ffd0d0;background:#2b0a0e;border-bottom-color:rgba(255,120,120,.35);}",
+    "#licenseTimerBar.ltb-urgent .ltb-dot{background:#ff5b5b;box-shadow:0 0 8px rgba(255,91,91,.9);animation:ltbPulse 1s infinite;}",
+    "@keyframes ltbPulse{0%,100%{opacity:1}50%{opacity:.28}}",
+    "html.license-bar-push body{padding-top:31px !important;}"
+  ].join("");
+
+  function injectStyles() {
+    if (document.getElementById("licenseGateStyles")) return;
+    var st = document.createElement("style");
+    st.id = "licenseGateStyles";
+    st.textContent = STYLES;
+    document.head.appendChild(st);
+  }
+
+  function normalizeKey(value) {
+    return String(value == null ? "" : value).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  async function sha256Hex(text) {
+    var bytes = new TextEncoder().encode(text);
+    var buf = await crypto.subtle.digest("SHA-256", bytes);
+    var arr = new Uint8Array(buf);
+    var out = "";
+    for (var i = 0; i < arr.length; i++) out += arr[i].toString(16).padStart(2, "0");
+    return out;
+  }
+
+  function withTimeout(promise, ms) {
+    return new Promise(function (resolve, reject) {
+      var timer = window.setTimeout(function () { reject(new Error("timeout")); }, ms);
+      promise.then(
+        function (v) { window.clearTimeout(timer); resolve(v); },
+        function (e) { window.clearTimeout(timer); reject(e); }
+      );
+    });
+  }
+
+  function entryHash(entry) { return String(entry && entry.hash ? entry.hash : "").toLowerCase().trim(); }
+
+  // Merge a downloaded list over the baked-in one: a remote entry wins when both describe the same
+  // hash (so an expiry can be set remotely), and any hash listed under "revoked" stops working.
+  function applyRemote(data) {
+    var list = null;
+    var revoked = [];
+    if (Array.isArray(data)) {
+      list = data;
+    } else if (data && Array.isArray(data.keys)) {
+      list = data.keys;
+      if (Array.isArray(data.revoked)) revoked = data.revoked;
+    }
+    if (!list) return false;
+
+    var byHash = {};
+    var order = [];
+    function put(entry) {
+      var h = entryHash(entry);
+      if (!h) return;
+      if (!byHash[h]) order.push(h);
+      byHash[h] = entry;
+    }
+    var i;
+    for (i = 0; i < BASE_KEYS.length; i++) put(BASE_KEYS[i]);
+    for (i = 0; i < list.length; i++) put(list[i]);
+
+    REVOKED = [];
+    for (i = 0; i < revoked.length; i++) {
+      var rv = String(revoked[i] == null ? "" : revoked[i]).toLowerCase().trim();
+      if (rv && REVOKED.indexOf(rv) === -1) REVOKED.push(rv);
+    }
+
+    var merged = [];
+    for (i = 0; i < order.length; i++) {
+      if (REVOKED.indexOf(order[i]) === -1) merged.push(byHash[order[i]]);
+    }
+    KEYS = merged;
+    sync.ok = true;
+    sync.at = Date.now();
+    sync.count = KEYS.length;
+    return true;
+  }
+
+  function readRemoteCache() {
+    try {
+      var raw = window.localStorage.getItem(REMOTE_CACHE);
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      return parsed && parsed.data ? parsed.data : null;
+    } catch (e) { return null; }
+  }
+
+  function cacheRemote(data) {
+    try { window.localStorage.setItem(REMOTE_CACHE, JSON.stringify({ at: Date.now(), data: data })); } catch (e) {}
+  }
+
+  function noCacheUrl(url) {
+    if (!/^https?:/i.test(url)) return url;
+    return url + (url.indexOf("?") === -1 ? "?" : "&") + "t=" + Date.now();
+  }
+
+  async function fetchKeyList(url) {
+    var res = await fetch(noCacheUrl(url), { cache: "no-store", credentials: "omit" });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    return await res.json();
+  }
+
+  // Every source is asked at the same time and the first usable answer wins, so a dead or blocked
+  // URL costs nothing. The whole race is capped by `ms`.
+  function raceKeys(urls, ms) {
+    return new Promise(function (resolve) {
+      var done = false, pending = urls.length, timer = null;
+      function finish(value) {
+        if (done) return;
+        done = true;
+        if (timer) window.clearTimeout(timer);
+        resolve(value);
+      }
+      if (!pending) { finish(null); return; }
+      timer = window.setTimeout(function () { finish(null); }, ms);
+      urls.forEach(function (url) {
+        withTimeout(fetchKeyList(url), ms).then(function (data) {
+          if (done) return;
+          if (data) { sync.source = url; finish(data); return; }
+          if (--pending <= 0) finish(null);
+        }, function () {
+          if (done) return;
+          if (--pending <= 0) finish(null);
+        });
+      });
+    });
+  }
+
+  var remotePromise = null;
+  function syncRemote(force) {
+    if (remotePromise && !force) return remotePromise;
+    if (!KEY_URLS.length) { sync.state = "none"; remotePromise = Promise.resolve(false); return remotePromise; }
+    if (force) remotePromise = null;
+    sync.state = "checking";
+    remotePromise = (async function () {
+      var data = await raceKeys(KEY_URLS, 5000);
+      sync.checkedAt = Date.now();
+      if (data && applyRemote(data)) {
+        cacheRemote(data);
+        sync.state = "online";
+        return true;
+      }
+      sync.state = "offline";
+      return false;
+    })();
+    return remotePromise;
+  }
+
+  function findEntry(hash) {
+    for (var i = 0; i < KEYS.length; i++) {
+      var entry = KEYS[i];
+      if (entry && String(entry.hash).toLowerCase() === hash) return entry;
+    }
+    return null;
+  }
+
+  function readLastSeen() {
+    try {
+      var v = Number(window.localStorage.getItem(LAST_SEEN_KEY));
+      return isFinite(v) ? v : 0;
+    } catch (e) { return 0; }
+  }
+
+  function touchLastSeen(now) {
+    try {
+      var stored = readLastSeen();
+      if (now > stored) window.localStorage.setItem(LAST_SEEN_KEY, String(now));
+      return Math.max(now, stored);
+    } catch (e) { return now; }
+  }
+
+  function clockMovedBackwards() {
+    var seen = readLastSeen();
+    return seen > 0 && Date.now() < seen - TOLERANCE_MS;
+  }
+
+  function readRemembered() {
+    try { return String(window.localStorage.getItem(REMEMBER_KEY) || "").trim(); } catch (e) { return ""; }
+  }
+
+  function writeRemembered(key) {
+    try { window.localStorage.setItem(REMEMBER_KEY, String(key).trim()); } catch (e) {}
+  }
+
+  function clearRemembered() {
+    try { window.localStorage.removeItem(REMEMBER_KEY); } catch (e) {}
+  }
+
+  function fmtDuration(ms) {
+    var total = Math.max(0, Math.floor(ms / 1000));
+    var days = Math.floor(total / 86400); total -= days * 86400;
+    var hours = Math.floor(total / 3600); total -= hours * 3600;
+    var mins = Math.floor(total / 60); var secs = total - mins * 60;
+    var pad = function (n) { return n < 10 ? "0" + n : "" + n; };
+    if (days > 0) return days + "d " + pad(hours) + ":" + pad(mins) + ":" + pad(secs);
+    return pad(hours) + ":" + pad(mins) + ":" + pad(secs);
+  }
+
+  async function validate(value) {
+    var normalized = normalizeKey(value);
+    if (normalized.length < 12) return { ok: false, reason: "unknown" };
+    var hash = await sha256Hex(normalized);
+    if (REVOKED.indexOf(hash) !== -1) return { ok: false, reason: "revoked" };
+    var entry = findEntry(hash);
+    if (!entry) return { ok: false, reason: "unknown" };
+    var exp = entry.exp ? Date.parse(entry.exp) : null;
+    if (isNaN(exp)) exp = null;
+    if (exp) {
+      if (clockMovedBackwards()) return { ok: false, reason: "tamper" };
+      if (Date.now() >= exp) return { ok: false, reason: "expired" };
+    }
+    return { ok: true, exp: exp, label: entry.label || "" };
+  }
+
+  var gateEl, inputEl, btnEl, msgEl, barEl, barTextEl, rememberEl;
+
+  function setMessage(text, kind) {
+    msgEl.textContent = text || "";
+    msgEl.className = "lg-msg" + (kind ? " lg-msg--" + kind : "");
+  }
+
+  function buildWhatsappHref() {
+    var digits = String(CFG.whatsapp).replace(/[^0-9]/g, "");
+    var text = encodeURIComponent(CFG.whatsappPrefill);
+    return "https://wa.me/" + digits + (text ? "?text=" + text : "");
+  }
+
+  function buildGate() {
+    gateEl = document.createElement("div");
+    gateEl.id = "licenseGate";
+    gateEl.innerHTML =
+      '<div class="lg-card">' +
+        '<div class="lg-lock"><svg viewBox="0 0 24 24"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5Zm-3 8V6a3 3 0 1 1 6 0v3H9Zm3 4a2 2 0 0 1 1 3.72V19a1 1 0 0 1-2 0v-2.28A2 2 0 0 1 12 13Z"/></svg></div>' +
+        '<h1 class="lg-title"></h1>' +
+        '<p class="lg-sub">This app is licensed. Enter a valid key to open it.</p>' +
+        '<label class="lg-label" for="licenseGateInput"></label>' +
+        '<input id="licenseGateInput" class="lg-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" placeholder="License key">' +
+        '<label class="lg-remember" for="licenseGateRemember"><input id="licenseGateRemember" type="checkbox">Remember key</label>' +
+        '<button id="licenseGateBtn" class="lg-btn" type="button"></button>' +
+        '<div id="licenseGateMsg" class="lg-msg"></div>' +
+        '<div class="lg-div"></div>' +
+        '<div class="lg-buy-title"></div>' +
+        '<a class="lg-wa" target="_blank" rel="noopener noreferrer">' +
+          '<svg viewBox="0 0 24 24"><path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.1-.7.1-.2.3-.7 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.2-.5-2.3-1.5-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6.1-.1.3-.4.5-.6.1-.2.2-.3.3-.5.1-.2 0-.4 0-.5-.1-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.4s1 2.8 1.2 3c.1.2 1.9 3 4.7 4.2.7.3 1.2.5 1.6.6.7.2 1.3.2 1.8.1.6-.1 1.7-.7 1.9-1.4.2-.7.2-1.2.2-1.4-.1-.2-.3-.3-.6-.4ZM12 21.5c-1.7 0-3.3-.5-4.7-1.3l-3.3.9.9-3.2A9.4 9.4 0 0 1 2.5 12 9.5 9.5 0 0 1 12 2.5 9.5 9.5 0 0 1 21.5 12 9.5 9.5 0 0 1 12 21.5Zm0-21A11.5 11.5 0 0 0 .5 12c0 2 .5 3.9 1.5 5.6L.4 23.6l6.1-1.6a11.5 11.5 0 0 0 5.5 1.4A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z"/></svg>' +
+          '<span class="lg-wa-num"></span>' +
+        '</a>' +
+        '<div class="lg-owner"></div>' +
+        '<div class="lg-foot"></div>' +
+      '</div>';
+
+    document.body.appendChild(gateEl);
+
+    gateEl.querySelector(".lg-title").textContent = CFG.appName;
+    gateEl.querySelector(".lg-label").textContent = CFG.promptLabel;
+    gateEl.querySelector(".lg-buy-title").textContent = CFG.buyText;
+    gateEl.querySelector(".lg-wa-num").textContent = CFG.whatsappDisplay || CFG.whatsapp;
+    gateEl.querySelector(".lg-owner").textContent = CFG.ownerName;
+    gateEl.querySelector(".lg-foot").textContent = "Licensed app · all keys are issued by the optimizer";
+    gateEl.querySelector(".lg-wa").href = buildWhatsappHref();
+
+    inputEl = gateEl.querySelector("#licenseGateInput");
+    btnEl = gateEl.querySelector("#licenseGateBtn");
+    msgEl = gateEl.querySelector("#licenseGateMsg");
+    rememberEl = gateEl.querySelector("#licenseGateRemember");
+    btnEl.textContent = CFG.buttonText;
+
+    btnEl.addEventListener("click", onActivate);
+    inputEl.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") { e.preventDefault(); onActivate(); }
+    });
+    inputEl.addEventListener("input", function () {
+      if (msgEl.textContent) setMessage("", "");
+    });
+    rememberEl.addEventListener("change", function () {
+      if (!rememberEl.checked) clearRemembered();
+    });
+  }
+
+  function buildTimerBar() {
+    barEl = document.createElement("div");
+    barEl.id = "licenseTimerBar";
+    barEl.hidden = true;
+    barEl.innerHTML = '<span class="ltb-dot"></span><span class="ltb-text"></span>';
+    document.body.appendChild(barEl);
+    barTextEl = barEl.querySelector(".ltb-text");
+  }
+
+  function showTimerBar() {
+    barEl.hidden = false;
+  }
+
+  function hideTimerBar() {
+    barEl.hidden = true;
+  }
+
+  function tick() {
+    var now = Date.now();
+    var seen = touchLastSeen(now);
+    if (seen - now > TOLERANCE_MS) { expire(CFG.tamperText); return; }
+    if (!state.exp) {
+      barTextEl.textContent = "License active · unlimited";
+      barEl.classList.remove("ltb-urgent");
+      return;
+    }
+    var left = state.exp - now;
+    if (left <= 0) { expire(CFG.expiredText); return; }
+    barTextEl.textContent = "License expires in " + fmtDuration(left);
+    barEl.classList.toggle("ltb-urgent", left < 5 * 60 * 1000);
+  }
+
+  function startTimer(exp) {
+    stopTimer();
+    state.exp = exp;
+    tick();
+    state.interval = window.setInterval(tick, 1000);
+  }
+
+  function stopTimer() {
+    if (state.interval) { window.clearInterval(state.interval); state.interval = null; }
+  }
+
+  function publish(unlocked, detail) {
+    detail = detail || {};
+    var prev = window.__licenseState || {};
+    var st = {
+      unlocked: !!unlocked,
+      label: detail.label !== undefined ? detail.label : (prev.label || ""),
+      exp: unlocked ? (detail.exp === undefined ? null : detail.exp) : null,
+      appName: CFG.appName,
+      owner: CFG.ownerName,
+      message: detail.message || ""
+    };
+    window.__licenseState = st;
+    try {
+      document.dispatchEvent(new CustomEvent(unlocked ? "licensegate:unlock" : "licensegate:lock", { detail: st }));
+    } catch (e) {}
+  }
+
+  function unlock(result) {
+    document.documentElement.classList.add(READY_CLASS);
+    if (String(CFG.barMode).toLowerCase() === "push") document.documentElement.classList.add("license-bar-push");
+    gateEl.hidden = true;
+    inputEl.value = "";
+    setMessage("", "");
+    showTimerBar();
+    startTimer(result.exp);
+    publish(true, { label: result.label || "", exp: result.exp });
+  }
+
+  function expire(message) {
+    lock(message || CFG.expiredText);
+  }
+
+  function lock(message) {
+    stopTimer();
+    document.documentElement.classList.remove(READY_CLASS);
+    document.documentElement.classList.remove("license-bar-push");
+    hideTimerBar();
+    gateEl.hidden = false;
+    state.exp = null;
+    if (inputEl) { inputEl.value = ""; }
+    setMessage(message || "", message ? "error" : "");
+    publish(false, { message: message || "" });
+    try { window.scrollTo(0, 0); } catch (e) {}
+    if (inputEl) { try { inputEl.focus(); } catch (e) {} }
+  }
+
+  var busy = false;
+  async function onActivate() {
+    if (busy) return;
+    var value = inputEl.value;
+    if (!normalizeKey(value)) { setMessage(CFG.unknownText, "error"); return; }
+    busy = true;
+    btnEl.disabled = true;
+    btnEl.textContent = "Checking...";
+    setMessage("", "");
+    var result;
+    try {
+      result = await validate(value);
+      // The key may have been issued after this build was installed - ask the live list once.
+      if (!result.ok && result.reason === "unknown" && KEY_URLS.length) {
+        if (Date.now() - sync.checkedAt > 15000) {
+          btnEl.textContent = "Checking online...";
+          try { await withTimeout(syncRemote(true), 8000); } catch (e2) {}
+        }
+        result = await validate(value);
+      }
+    } catch (e) {
+      result = { ok: false, reason: "unknown" };
+    }
+    busy = false;
+    btnEl.disabled = false;
+    btnEl.textContent = CFG.buttonText;
+    if (result.ok) {
+      if (rememberEl.checked) writeRemembered(value);
+      else clearRemembered();
+      unlock(result);
+      return;
+    }
+    if (result.reason === "expired") setMessage(CFG.expiredText, "error");
+    else if (result.reason === "revoked") setMessage(CFG.revokedText, "error");
+    else if (result.reason === "tamper") setMessage(CFG.tamperText, "error");
+    else setMessage(CFG.unknownText, "error");
+    inputEl.select();
+  }
+
+  function init() {
+    injectStyles();
+    buildGate();
+    buildTimerBar();
+    hideTimerBar();
+    var cached = readRemoteCache();
+    if (cached) { try { applyRemote(cached); } catch (e) {} }
+    syncRemote();
+    var saved = readRemembered();
+    if (saved) {
+      rememberEl.checked = true;
+      inputEl.value = saved;
+      onActivate();
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
+
+  window.__licenseGate = {
+    config: CFG,
+    keys: KEYS,
+    keyList: function () { return KEYS; },
+    revoked: function () { return REVOKED.slice(); },
+    sources: KEY_URLS,
+    sync: function () { return sync; },
+    syncRemote: syncRemote,
+    state: function () { return window.__licenseState || { unlocked: false }; },
+    validate: validate,
+    unlock: unlock,
+    lock: lock,
+    normalizeKey: normalizeKey
+  };
+  window.__licenseGateLoaded = true;
+})();
+
+</script>
+<script>
+  setTimeout(function () {
+    if (window.__licenseGateLoaded) return;
+    var el = document.createElement("div");
+    el.style.cssText = "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;font-family:system-ui,sans-serif;background:#0b0f18;color:#e8eefc;";
+    el.textContent = "License module could not load. Please contact the optimizer.";
+    document.body.appendChild(el);
+  }, 4000);
+</script>
+
+<link rel="stylesheet" href="src/style.css">
+<link rel="icon" type="image/png" href="src/icon-192.png">
+<link rel="apple-touch-icon" href="src/icon-192.png">
+<meta name="theme-color" content="#05070f">
+
+<div class="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-logo" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2 4.5 13.5H10l-1 8.5 8.5-11.5H12l1-8.5z"/>
+        </svg>
+      </div>
+      <div class="brand-txt">
+        <div class="brand-title" id="brandTitle">Optimizer V.4.0</div>
+        <div class="brand-sub" id="brandSub">ANDROID PERF ENGINE &middot; NON-ROOT</div>
+      </div>
+    </div>
+    <div class="topbar-spacer"></div>
+    <div class="badge mode-chip" id="modeChip" title="Which shell this app is running in - tap for the full setting audit"><span class="dot"></span><span id="modeChipTxt">CHECKING</span><span class="mode-short" id="modeChipShort">WEB</span></div>
+    <div class="badge" id="engineBadge" title="Live CPU / GPU engine activity"><span class="dot"></span><span id="engineBadgeTxt">CPU <b id="cpuLoadTxt">0%</b> &middot; GPU <b id="gpuLoadTxt">0%</b></span></div>
+    <div class="badge" id="fpsPill" title="Live frames per second"><b id="fpsPillVal">--</b><span>FPS</span></div>
+    <button class="icon-btn" id="hudBtn" title="Toggle FPS HUD overlay">&#128202;</button>
+    <button class="icon-btn" id="themeBtn" title="Toggle dark / light theme">&#9728;&#65039;</button>
+  </header>
+
+  <div class="tabstrip-wrap">
+    <nav class="tabstrip" id="tabStrip">
+      <button class="tab" data-view="hardware"><i>&#129504;</i>Hardware</button>
+      <button class="tab" data-view="monitors"><i>&#128202;</i>Monitors</button>
+      <button class="tab" data-view="aim"><i>&#127919;</i>Aim &amp; Sensi</button>
+      <button class="tab" data-view="touch"><i>&#128070;</i>Touch</button>
+      <button class="tab" data-view="memory"><i>&#129529;</i>Memory</button>
+      <button class="tab" data-view="network"><i>&#127760;</i>Network</button>
+      <button class="tab" data-view="gfx"><i>&#127917;</i>GFX Tuner</button>
+      <button class="tab" data-view="bench"><i>&#128640;</i>Benchmark</button>
+      <button class="tab" data-view="launch"><i>&#127918;</i>Game Launch</button>
+      <button class="tab" data-view="about"><i>&#8505;&#65039;</i>About</button>
+    </nav>
+  </div>
+
+  <main class="views">
+
+    <!-- ============================ HARDWARE ============================ -->
+    <section class="view" id="view-hardware">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Hardware <span>Profiles</span></h1>
+          <p class="view-desc">Real hardware read-out from your device, optimization presets, and the live engine targets the app is currently driving.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#129513;</div><div class="card-tt">Device Compatibility &amp; Every-Setting Audit</div><span class="card-tag" id="compatTag">CHECKING</span></div>
+          <div class="card-bd">
+            <p class="card-sub">Every switch, slider and tool in this app is resolved for <b>this exact device</b>. Tap the badge on any card to see what that setting really does here, and what the same setting does inside the Android APK shell.</p>
+            <div class="cap-summary" id="compatSummary"></div>
+            <div class="gap"></div>
+            <div class="kv-grid" id="compatFacts"></div>
+            <div class="gap"></div>
+            <div class="btn-row">
+              <button class="btn primary" data-cmd="compat.audit">&#128269; Audit every setting on this device</button>
+              <button class="btn ghost" data-cmd="compat.copy">&#128203; Copy compatibility report</button>
+            </div>
+            <div class="gap"></div>
+            <div class="notice"><span class="n-ico">&#128241;</span><span>BROWSER rows are what this page can really do on this device. NATIVE rows are what the same code does inside the Android shell (<b>src/android/</b>), where Android's own APIs - game mode, hint sessions, unbuffered input, thermal status, package manager - are available.</span></div>
+          </div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#129504;</div><div class="card-tt">Hardware Detection &amp; Info Display</div><span class="card-tag" id="hwStamp">NOT SCANNED</span></div>
+          <div class="card-bd">
+            <div class="kv-grid" id="hwGrid"></div>
+            <div class="gap"></div>
+            <div class="btn-row">
+              <button class="btn primary" data-cmd="hw.scan">&#128260; Re-scan Hardware Specs</button>
+              <button class="btn ghost" data-cmd="hw.copy">&#128203; Copy Full Spec Report</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#9881;&#65039;</div><div class="card-tt">Optimization Presets</div><span class="card-tag">ONE-TAP PROFILE</span></div>
+          <div class="card-bd">
+            <p class="card-sub">A preset writes every engine parameter at once. Effects are applied instantly and logged in the console below.</p>
+            <div class="preset-grid" id="presetGrid"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#127919;</div><div class="card-tt">Target Hardware Status Indicators</div></div>
+          <div class="card-bd">
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Target FPS Cap</span><span class="field-v" id="tgtFpsVal">60 FPS</span></div>
+              <select class="select" data-key="hw.targetFps" id="tgtFpsSel">
+                <option value="30">30 FPS &mdash; battery saver</option>
+                <option value="60">60 FPS &mdash; standard</option>
+                <option value="90">90 FPS &mdash; high refresh</option>
+                <option value="120">120 FPS &mdash; ultra refresh</option>
+                <option value="144">144 FPS &mdash; uncapped / max</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Touch Sampling Rate</span><span class="field-v" id="tgtTouchVal">240 Hz</span></div>
+              <select class="select" data-key="hw.touchRate" id="tgtTouchSel">
+                <option value="120">120 Hz &mdash; standard panel</option>
+                <option value="180">180 Hz &mdash; fast</option>
+                <option value="240">240 Hz &mdash; gaming</option>
+                <option value="360">360 Hz &mdash; esports</option>
+                <option value="480">480 Hz &mdash; max polling</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">CPU / GPU Governor State</span><span class="field-v" id="tgtGovVal">balanced</span></div>
+              <select class="select" data-key="hw.governor" id="tgtGovSel">
+                <option value="performance">performance &mdash; always max clocks</option>
+                <option value="balanced">balanced &mdash; normal 60 FPS</option>
+                <option value="powersave">powersave &mdash; cool &amp; quiet</option>
+              </select>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Memory Aggression Level</span><span class="field-v" id="tgtMemVal">3 / 5</span></div>
+              <input class="slider" type="range" min="1" max="5" step="1" data-key="hw.memAggression" id="tgtMemSlider">
+              <div class="field-d">Controls the buffer-pool size and how aggressively the app reclaims memory.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">Console Execution Log</div><span class="card-tag">LIVE</span></div>
+          <div class="card-bd"><div class="logbox" data-log="all" style="max-height:340px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ MONITORS ============================ -->
+    <section class="view" id="view-monitors">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">System Monitors <span>&amp; Fix FPS Drops</span></h1>
+          <p class="view-desc">Shield engine, zero-lag plugin, live metrics and the real-time telemetry graph.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128737;&#65039;</div><div class="card-tt">Fix FPS Drops Shield Engine</div><span class="state-chip" id="shieldChip">STANDBY</span></div>
+          <div class="card-bd">
+            <div class="row"><div class="row-txt"><div class="row-l">Enable / Disable Shield</div><div class="row-d">Reserves a frame budget and refuses late frame delivery.</div></div><button class="sw" data-key="mon.shield" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Frame Pacing Lock</div><div class="row-d">Flattens frame intervals so delivery timestamps stay even.</div></div><button class="sw" data-key="mon.framePacing" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Anti-Thermal Drop Override</div><div class="row-d">Degradation guard: detects sustained FPS decay and re-levels it.</div></div><button class="sw" data-key="mon.antiThermal" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Zero Stutter Driver Buffer Priority</div><div class="row-d">Deep buffer + deadline queue for the render pipeline.</div></div><button class="sw" data-key="mon.stutterBuffer" aria-pressed="false"></button></div>
+            <div class="gap"></div>
+            <button class="btn primary block" data-cmd="mon.optimizeNow">&#9889; Optimize Frame Pacing &amp; Fix FPS Drops Now</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128640;</div><div class="card-tt">Zero Lag Plugin</div><span class="state-chip" id="lagChip">STANDBY</span></div>
+          <div class="card-bd">
+            <div class="row"><div class="row-txt"><div class="row-l">Performance Lock CPU Governor</div><div class="row-d">App scheduler holds the performance governor request.</div></div><button class="sw" data-key="lag.perfLock" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Maximum Boost GPU Clock Target</div><div class="row-d">High-performance context + full render scale.</div></div><button class="sw" data-key="lag.gpuBoost" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Zero Stutter Lock Game Frame Pacing</div><div class="row-d">Removes 1-frame hitches from the delivery queue.</div></div><button class="sw" data-key="lag.zeroStutter" aria-pressed="false"></button></div>
+            <div class="gap"></div>
+            <button class="btn primary block" data-cmd="lag.apply">&#128165; Apply Zero Lag Optimization</button>
+            <div class="gap"></div>
+            <div class="notice"><span class="n-ico">&#8505;&#65039;</span><span>Apply locks in the three switches above at once and re-levels frame delivery to the target FPS. It stays active until you turn it off or restore defaults.</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128200;</div><div class="card-tt">Live System Metrics</div><span class="card-tag">REALTIME</span></div>
+          <div class="card-bd">
+            <div class="stat-grid" id="monStats"></div>
+            <div class="gap"></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Toggle FPS Counter HUD overlay</div><div class="row-d">Floating overlay pinned above the app UI.</div></div><button class="sw" data-key="ui.hud" aria-pressed="true"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Live Telemetry Graph</div><div class="row-d">Chart.js stream of FPS + RAM load %.</div></div><button class="sw" data-key="ui.graph" aria-pressed="true"></button></div>
+          </div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#128225;</div><div class="card-tt">Live Telemetry Graph</div><span class="card-tag" id="graphTag">CHART.JS</span></div>
+          <div class="card-bd">
+            <div class="canvas-wrap" style="padding:8px"><canvas id="graphCanvas" height="220"></canvas><div class="canvas-hint">FPS &nbsp;/&nbsp; RAM LOAD %</div></div>
+            <div class="gap"></div>
+            <div class="btn-row"><button class="btn sm" data-cmd="graph.toggle">&#9208; Pause stream</button><button class="btn sm ghost" data-cmd="graph.snapshot">&#128248; Snapshot telemetry (60s)</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">Monitor Log</div></div>
+          <div class="card-bd"><div class="logbox" data-log="SHIELD" style="max-height:200px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== AIM ============================== -->
+    <section class="view" id="view-aim">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Aim &amp; Sensi <span>(Damage &amp; Recoil)</span></h1>
+          <p class="view-desc">Ballistics lab: every toggle below rewires the simulator's real recoil, spread, hit-registration and head-snap models.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#127919;</div><div class="card-tt">Drag Headshot Simulator</div><span class="card-tag" id="aimWeaponTag">AR</span></div>
+          <div class="card-bd">
+            <div class="canvas-wrap">
+              <canvas id="aimCanvas" height="420"></canvas>
+              <div class="canvas-hint">DRAG TO AIM &middot; TAP TO FIRE</div>
+              <div class="canvas-stat" id="aimStat"></div>
+            </div>
+            <div class="gap"></div>
+            <div class="stat-grid" id="aimStats"></div>
+            <div class="gap"></div>
+            <div class="btn-row">
+              <button class="btn primary" data-cmd="aim.fire">&#128299; Fire burst</button>
+              <button class="btn" data-cmd="aim.newTarget">&#127919; New target</button>
+              <button class="btn ghost" data-cmd="aim.reset">&#8635; Reset stats</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#9881;&#65039;</div><div class="card-tt">In-Game Hardware Toggles</div></div>
+          <div class="card-bd">
+            <div class="row"><div class="row-txt"><div class="row-l">Fake Damage Fix</div><div class="row-d">Ghost hits / unregistered damage compensation.</div></div><button class="sw" data-key="aim.fakeDamage" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Game Recoil Fix</div><div class="row-d">Vertical climb compensation curve.</div></div><button class="sw" data-key="aim.recoilFix" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Aim Stick to Head</div><div class="row-d">Head-snap magnet inside a snap radius.</div></div><button class="sw" data-key="aim.aimStick" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Recoil Stabilizer</div><div class="row-d">Damps the random component of the climb.</div></div><button class="sw" data-key="aim.recoilStabilizer" aria-pressed="false"></button></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Bullet Spread Fix</div><div class="row-d">Tightens the random spread cone.</div></div><button class="sw" data-key="aim.spreadFix" aria-pressed="false"></button></div>
+            <div class="gap"></div>
+            <div class="notice"><span class="n-ico">&#8505;&#65039;</span><span>On a non-rooted Android device these switches drive this app's own ballistics engine. No sandboxed app can write into another game's memory - see About tab.</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128207;</div><div class="card-tt">HUD &amp; Drag Guide</div></div>
+          <div class="card-bd">
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Recommended Fire Button Size</span><span class="field-v" id="fireBtnVal">42%</span></div>
+              <input class="slider" type="range" min="20" max="80" step="1" data-key="aim.fireButton" id="fireBtnSlider" data-suffix="%">
+              <div class="field-d" id="fireBtnAdvice">Drag the slider - the live guide updates with the recommended hit-window for this size.</div>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Weapon Class Selector</span><span class="field-v" id="weapStats">AR</span></div>
+              <select class="select" data-key="aim.weapon" id="weaponSel"></select>
+              <div class="field-d" id="weapDesc"></div>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Dynamic Drag Technique Guide</span><span class="field-v" id="dragGrade">-</span></div>
+              <div class="bar" id="dragBar"><i></i></div>
+              <div class="field-d" id="dragTip">Fire a burst to grade your drag.</div>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Simulated Headshot Connection</span><span class="field-v" id="hsConnectVal">0%</span></div>
+              <div class="bar ok" id="hsBar"><i></i></div>
+            </div>
+            <div class="canvas-wrap" style="height:150px;background:#06080f">
+              <canvas id="firePreview" height="150"></canvas>
+              <div class="canvas-hint">FIRE BUTTON GUIDE</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">Aim Log</div></div>
+          <div class="card-bd"><div class="logbox" data-log="AIM" style="max-height:200px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================= TOUCH ============================= -->
+    <section class="view" id="view-touch">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Touch <span>Responsiveness &amp; Polling</span></h1>
+          <p class="view-desc">Measures your panel's real touch-report rate and lets you tune the app's input pipeline latency.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#9201;&#65039;</div><div class="card-tt">Touch Latency Adjustment</div><span class="card-tag" id="touchRateTag">240 Hz TARGET</span></div>
+          <div class="card-bd">
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Touch Response Delay</span><span class="field-v" id="touchDelayVal">1 ms</span></div>
+              <input class="slider" type="range" min="1" max="10" step="1" data-key="touch.delay" id="touchDelaySlider" data-suffix="ms">
+              <div class="field-d">Input-processing delay of the app's touch pipeline. Lower = snappier feedback, higher = smoother heavy frames.</div>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Target Touch Polling Frequency</span><span class="field-v" id="touchPollVal">240 Hz</span></div>
+              <select class="select" data-key="touch.pollRate" id="touchPollSel">
+                <option value="120">120 Hz</option>
+                <option value="180">180 Hz</option>
+                <option value="240">240 Hz</option>
+                <option value="360">360 Hz</option>
+                <option value="480">480 Hz</option>
+              </select>
+              <div class="field-d">The engine will not consume touch samples slower than this. Measured panel rate is shown live below.</div>
+            </div>
+            <div class="stat-grid" id="touchStats"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128070;</div><div class="card-tt">Interactive Touch Calibration Canvas</div><span class="card-tag" id="touchCalTag">IDLE</span></div>
+          <div class="card-bd">
+            <div class="canvas-wrap">
+              <canvas id="touchCanvas" height="300"></canvas>
+              <div class="canvas-hint">SWIPE / DRAG HERE</div>
+              <div class="canvas-stat" id="touchStat"></div>
+            </div>
+            <div class="gap"></div>
+            <div class="btn-row">
+              <button class="btn" data-cmd="touch.clear">&#10060; Clear canvas</button>
+              <button class="btn ghost" data-cmd="touch.calibrate">&#127919; Auto-calibrate panel</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">Touch Log</div></div>
+          <div class="card-bd"><div class="logbox" data-log="TOUCH" style="max-height:200px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================= MEMORY ============================= -->
+    <section class="view" id="view-memory">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Memory Booster <span>&amp; Battery Throttles</span></h1>
+          <p class="view-desc">Live memory gauge, real cache/buffer purge, and thermal-throttle control.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128202;</div><div class="card-tt">RAM Capacity Monitor</div><span class="card-tag" id="ramSourceTag">HEAP</span></div>
+          <div class="card-bd">
+            <div class="gauge-wrap">
+              <div class="gauge" id="ramGauge"></div>
+              <div class="gauge-legend">
+                <div class="kv-grid" id="ramStats"></div>
+              </div>
+            </div>
+            <div class="gap"></div>
+            <button class="btn danger block" data-cmd="mem.purge">&#129529; Purge RAM &amp; Clean Cache</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128267;</div><div class="card-tt">Battery Throttles Fix</div><span class="card-tag" id="battTag">READING</span></div>
+          <div class="card-bd">
+            <div class="kv-grid" id="battGrid"></div>
+            <div class="gap"></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Temperature-Throttling Override</div><div class="row-d">Stops the app from downgrading its own quality when the device heats up or the battery drops.</div></div><button class="sw" data-key="mem.batteryOverride" aria-pressed="false"></button></div>
+            <div class="btn-row"><button class="btn primary" data-cmd="mem.boost">&#128293; Boost Thermal Headroom Now</button><button class="btn ghost" data-cmd="mem.battRead">&#8635; Re-read battery</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128421;&#65039;</div><div class="card-tt">Terminal Execution Log</div><span class="card-tag">MEMORY</span></div>
+          <div class="card-bd"><div class="logbox" data-log="MEMORY" style="max-height:300px"></div></div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128295;</div><div class="card-tt">Storage &amp; Cache Reclaim</div></div>
+          <div class="card-bd">
+            <div class="kv-grid" id="storageGrid"></div>
+            <div class="gap"></div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Buffer pool (reclaimable)</span><span class="field-v" id="poolVal">-</span></div>
+              <div class="field-d">The app holds a disposable buffer pool; the purge button releases it and the gauge drop is real.</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ NETWORK ============================ -->
+    <section class="view" id="view-network">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Network Ping <span>&amp; DNS Optimizer</span></h1>
+          <p class="view-desc">Live game ping, real resolver selection and a regional node latency table.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#9209;&#65039;</div><div class="card-tt">Active Game Ping Display</div><span class="badge" id="connBadge"><span class="dot"></span><span id="connTxt">IDLE</span></span></div>
+          <div class="card-bd">
+            <div class="stat-grid" id="pingStats"></div>
+            <div class="gap"></div>
+            <div class="btn-row"><button class="btn primary" data-cmd="net.pingStart">&#9654;&#65039; Start ping monitor</button><button class="btn ghost" data-cmd="net.pingStop">&#9632; Stop</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#127760;</div><div class="card-tt">Gaming DNS Selector</div><span class="card-tag" id="dnsTag">CLOUDFLARE</span></div>
+          <div class="card-bd">
+            <div id="dnsList"></div>
+            <div class="gap"></div>
+            <div class="btn-row"><button class="btn primary" data-cmd="net.applyDns">&#9889; Apply DNS Profile</button><button class="btn ghost" data-cmd="net.testDns">&#128200; Benchmark resolvers</button></div>
+          </div>
+        </div>
+
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#127757;</div><div class="card-tt">Regional Cluster Latency Table</div><span class="card-tag" id="regionTag">NOT MEASURED</span></div>
+          <div class="card-bd">
+            <table class="tbl"><thead><tr><th>Node</th><th>Region</th><th>Host</th><th>Ping</th><th>Jitter</th><th>Status</th></tr></thead><tbody id="regionRows"></tbody></table>
+            <div class="gap"></div>
+            <button class="btn block" data-cmd="net.testRegions">&#128225; Measure all regional nodes</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">Network Log</div></div>
+          <div class="card-bd"><div class="logbox" data-log="NET" style="max-height:200px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== GFX ============================== -->
+    <section class="view" id="view-gfx">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">GFX Visual Tuner <span>&amp; Shader Renderer</span></h1>
+          <p class="view-desc">A real WebGL2 shader pipeline - quality presets change render scale and effects, colour styles change the grading of the live render.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#127917;</div><div class="card-tt">Live Shader Render Canvas</div><span class="card-tag" id="gfxTag">WEBGL2</span></div>
+          <div class="card-bd">
+            <div class="canvas-wrap">
+              <canvas id="gfxCanvas" height="420"></canvas>
+              <div class="canvas-hint">LIVE SHADER PREVIEW &middot; DRAG TO ORBIT</div>
+              <div class="canvas-stat" id="gfxStat"></div>
+            </div>
+            <div class="gap"></div>
+            <div class="btn-row"><button class="btn primary" data-cmd="gfx.apply">&#10024; Apply GFX Shaders</button><button class="btn" data-cmd="gfx.cycle">&#127917; Cycle quality</button><button class="btn ghost" data-cmd="gfx.fullscreen">&#9974;&#65039; Fullscreen preview</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128295;</div><div class="card-tt">Graphics Quality Presets</div></div>
+          <div class="card-bd">
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Quality</span><span class="field-v" id="gfxQualityVal">Balanced</span></div>
+              <select class="select" data-key="gfx.quality" id="gfxQualitySel"></select>
+              <div class="field-d" id="gfxQualityDesc"></div>
+            </div>
+            <div class="field">
+              <div class="field-hd"><span class="field-l">Colour Style Filter</span><span class="field-v" id="gfxColorVal">Vivid</span></div>
+              <select class="select" data-key="gfx.color" id="gfxColorSel"></select>
+              <div class="field-d" id="gfxColorDesc"></div>
+            </div>
+            <div class="kv-grid" id="gfxStats"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">GFX Log</div></div>
+          <div class="card-bd"><div class="logbox" data-log="GFX" style="max-height:200px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================ BENCHMARK ============================ -->
+    <section class="view" id="view-bench">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Benchmark <span>Studio</span></h1>
+          <p class="view-desc">CPU single/multi core, GPU fill-rate, memory bandwidth and storage - scored before and after your profile.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128640;</div><div class="card-tt">Run Benchmark Test</div><span class="card-tag" id="benchTag">IDLE</span></div>
+          <div class="card-bd">
+            <div class="bar-lbl"><span id="benchStep">Ready</span><span id="benchPct">0%</span></div>
+            <div class="bar" id="benchBar"><i></i></div>
+            <div class="gap"></div>
+            <div class="btn-row"><button class="btn primary" data-cmd="bench.run">&#9889; Run Benchmark Test</button><button class="btn ghost" data-cmd="bench.reset">&#8635; Clear results</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128202;</div><div class="card-tt">Benchmark Results</div><span class="card-tag" id="benchScoreTag">-</span></div>
+          <div class="card-bd">
+            <table class="tbl"><thead><tr><th>Test</th><th>Before</th><th>After</th><th>Delta</th></tr></thead><tbody id="benchRows"><tr><td colspan="4" class="dim">No results yet - run a benchmark.</td></tr></tbody></table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">Benchmark Logger</div></div>
+          <div class="card-bd"><div class="logbox" data-log="BENCH" style="max-height:240px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================= LAUNCH ============================= -->
+    <section class="view" id="view-launch">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">Game <span>Launch</span></h1>
+          <p class="view-desc">Detects which game is actually installed on this device, launches it instantly, and warns you when the wrong button is tapped.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card span2">
+          <div class="card-hd"><div class="card-ico">&#127918;</div><div class="card-tt">Installed Games &amp; Launcher</div><span class="card-tag" id="launchTag">SCANNING</span></div>
+          <div class="card-bd">
+            <div id="launchList"></div>
+            <div class="gap"></div>
+            <div class="notice"><span class="n-ico">&#8505;&#65039;</span><span>Detection is done by an Android app-launch probe: if the package is missing, Android sends us back a "not installed" signal and the app blocks the launch with a 5 second notice.</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128203;</div><div class="card-tt">Launch Plan</div></div>
+          <div class="card-bd">
+            <div class="kv-grid" id="launchPlan"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128220;</div><div class="card-tt">Launcher Log</div></div>
+          <div class="card-bd"><div class="logbox" data-log="LAUNCH" style="max-height:240px"></div></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================== ABOUT ============================= -->
+    <section class="view" id="view-about">
+      <div class="view-head">
+        <div>
+          <h1 class="view-title">About &amp; <span>System Studio</span></h1>
+          <p class="view-desc">Build information, developer contact, restore-to-default, and exactly which parts of this optimizer are physically real on a non-rooted device.</p>
+        </div>
+      </div>
+      <div class="grid">
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128100;</div><div class="card-tt">Developer</div></div>
+          <div class="card-bd">
+            <div class="credits">
+              <div class="credit"><div class="credit-ico">&#128736;&#65039;</div><div><div class="credit-k">Created by</div><div class="credit-v" id="devName">Aash optimizer</div></div></div>
+              <div class="credit"><div class="credit-ico">&#128241;</div><div><div class="credit-k">Buy VIP packages &mdash; WhatsApp only</div><div class="credit-v"><a id="devWa" href="#">+94 71 238 6533</a></div></div></div>
+              <div class="credit"><div class="credit-ico">&#10024;</div><div><div class="credit-k">Next release</div><div class="credit-v" id="devNext">Optimizer V.5.0 &mdash; Coming soon</div></div></div>
+              <div class="credit"><div class="credit-ico">&#129302;</div><div><div class="credit-k">Build</div><div class="credit-v" id="devBuild">V4.0.0-stable</div></div></div>
+            </div>
+            <div class="gap"></div>
+            <div class="btn-row"><button class="btn primary" data-cmd="about.wa">&#128172; Message on WhatsApp</button><button class="btn" data-cmd="about.share">&#128279; Share this app</button></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128273;</div><div class="card-tt">License &amp; Activation</div><span class="state-chip" id="licChip">LOCKED</span></div>
+          <div class="card-bd">
+            <p class="card-sub">This build is key-locked. The dashboard only starts after <b id="licOwner">the developer</b> issues a license key for the device, and the app verifies it here.</p>
+            <div class="kv-grid" id="licGrid"></div>
+            <div class="gap"></div>
+            <div class="btn-row">
+              <button class="btn primary" data-cmd="lic.status">&#128273; Refresh license status</button>
+              <button class="btn ghost" data-cmd="lic.lock">&#128274; Lock now (test your key)</button>
+            </div>
+            <div class="gap"></div>
+            <div class="notice"><span class="n-ico">&#128274;</span><span>The license key itself is never stored inside the app &mdash; only its SHA-256 digest, so a key can be verified without the app containing it. Device clock roll-back is detected and treated as tampering.</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#8635;</div><div class="card-tt">Restore &amp; Reset</div></div>
+          <div class="card-bd">
+            <p class="card-sub">Restore puts every single parameter back to factory default immediately. Closing / reloading the app also resets everything, because nothing is persisted.</p>
+            <div class="btn-row"><button class="btn danger block" data-cmd="about.restore">&#8635; Restore All Settings To Default</button></div>
+            <div class="gap"></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Session persistence</div><div class="row-d">Disabled by design &mdash; settings live in memory only.</div></div><span class="state-chip">OFF</span></div>
+            <div class="row"><div class="row-txt"><div class="row-l">Loaded profile</div><div class="row-d" id="aboutProfile">balanced</div></div><span class="state-chip" id="aboutProfileChip">ACTIVE</span></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#128274;</div><div class="card-tt">Permissions</div><span class="card-tag">MANIFEST</span></div>
+          <div class="card-bd">
+            <div class="btn-row"><button class="btn primary" data-cmd="about.perms">&#128275; Request available permissions</button></div>
+            <div class="gap"></div>
+            <div class="logbox no-log" id="permList" style="max-height:200px"></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">&#9878;&#65039;</div><div class="card-tt">What is real on a non-rooted device</div></div>
+          <div class="card-bd" id="realNotes"></div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<div class="hud hidden" id="hud">
+  <div class="hud-r"><span class="hud-k">FPS</span><span class="hud-fps" id="hudFps">--</span></div>
+  <canvas class="hud-spark" id="hudSpark" width="132" height="22"></canvas>
+  <div class="hud-r"><span class="hud-k">FRAME</span><span id="hudFrame">--</span></div>
+  <div class="hud-r"><span class="hud-k">CPU</span><span id="hudCpu">--</span></div>
+  <div class="hud-r"><span class="hud-k">RAM</span><span id="hudRam">--</span></div>
+  <div class="hud-r"><span class="hud-k">THERM</span><span id="hudTherm">--</span></div>
+  <div class="hud-r"><span class="hud-k">VER</span><span id="hudVer">v4.0.0</span></div>
+</div>
+
+<div class="dock" id="consoleDock">
+  <div class="dock-hd">
+    <span class="card-ico" style="width:24px;height:24px;flex:0 0 24px;font-size:12px">&#128421;&#65039;</span>
+    <span class="dock-tt">CONSOLE EXECUTION LOG</span>
+    <span class="dock-count" id="dockCount">0 events</span>
+    <span style="flex:1"></span>
+    <button class="btn sm ghost" id="dockClear">Clear</button>
+  </div>
+  <div class="dock-bd">
+    <div class="filters">
+      <button class="fchip active" data-filter="all">ALL</button>
+      <button class="fchip" data-filter="SHIELD">SHIELD</button>
+      <button class="fchip" data-filter="ZERO-LAG">ZERO-LAG</button>
+      <button class="fchip" data-filter="AIM">AIM</button>
+      <button class="fchip" data-filter="TOUCH">TOUCH</button>
+      <button class="fchip" data-filter="MEMORY">MEMORY</button>
+      <button class="fchip" data-filter="NET">NET</button>
+      <button class="fchip" data-filter="GFX">GFX</button>
+      <button class="fchip" data-filter="BENCH">BENCH</button>
+      <button class="fchip" data-filter="LAUNCH">LAUNCH</button>
+      <button class="fchip" data-filter="DEVICE">DEVICE</button>
+      <button class="fchip" data-filter="PROFILE">PROFILE</button>
+    </div>
+    <div class="logbox" data-log="all"></div>
+  </div>
+</div>
+
+<div class="toast-wrap" id="toastWrap"></div>
+<div class="modal-wrap hidden" id="modalWrap"></div>
+
+<script type="module" src="src/main.js"></script>
+
+</body></html>

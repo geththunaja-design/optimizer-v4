@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Optimizer V.4.0 - License Key Maker</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:18px 14px 40px; background:radial-gradient(1100px 600px at 50% -10%,#1b2740 0%,#0b0f18 55%,#05070c 100%);
+         color:#e8eefc; font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif; }
+  .wrap { max-width:560px; margin:0 auto; }
+  h1 { font-size:20px; margin:0 0 4px; letter-spacing:.2px; }
+  .sub { color:#93a2c2; font-size:13px; margin:0 0 20px; line-height:1.5; }
+  .card { background:rgba(20,26,40,.72); border:1px solid rgba(255,255,255,.09); border-radius:16px; padding:16px; margin-bottom:14px; }
+  label { display:block; font-size:12.5px; color:#a9b7d6; font-weight:600; margin:0 0 6px; letter-spacing:.2px; }
+  input { width:100%; padding:12px 13px; border-radius:11px; border:1px solid rgba(255,255,255,.14); background:rgba(8,11,18,.85);
+          color:#f2f6ff; font-size:16px; outline:none; }
+  input:focus { border-color:#4f8dff; box-shadow:0 0 0 3px rgba(79,141,255,.18); }
+  .row { display:flex; gap:10px; flex-wrap:wrap; }
+  .row > div { flex:1 1 210px; }
+  button { width:100%; margin-top:12px; padding:13px 16px; border:0; border-radius:11px; cursor:pointer;
+           background:linear-gradient(150deg,#2f74ff,#7a4dfb); color:#fff; font-size:15px; font-weight:650; }
+  button.ghost { background:rgba(255,255,255,.08); color:#dbe5fb; font-weight:560; font-size:13.5px; margin-top:10px; }
+  button:active { transform:scale(.99); }
+  .hint { font-size:12px; color:#7f8dab; margin:8px 0 0; line-height:1.5; }
+  .out { margin-top:14px; }
+  .out .lbl { font-size:12.5px; color:#a9b7d6; font-weight:600; margin:0 0 6px; display:flex; justify-content:space-between; align-items:center; }
+  .out .lbl span.ok { color:#7ee0a6; font-weight:600; font-size:12px; }
+  pre { margin:0; padding:12px; background:rgba(8,11,18,.9); border:1px solid rgba(255,255,255,.1); border-radius:11px;
+        font-size:12.5px; line-height:1.55; overflow-x:auto; white-space:pre-wrap; word-break:break-all; }
+  .key { font-size:16px; letter-spacing:1.5px; font-weight:650; color:#cfe0ff; }
+  .err { color:#ff9aa2; font-size:13px; margin-top:10px; }
+  .steps { font-size:13px; color:#a9b7d6; line-height:1.7; margin:0; padding-left:18px; }
+  .steps b { color:#e8eefc; }
+  hr { border:0; height:1px; background:rgba(255,255,255,.09); margin:16px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>License Key Maker</h1>
+  <p class="sub">Optimizer V.4.0 &middot; write the plaintext key here, get the line to paste into <b>license-keys.json</b>.</p>
+
+  <div class="card">
+    <label for="nameIn">Customer name (or anything you'll recognise)</label>
+    <input id="nameIn" type="text" placeholder="customer-2" autocapitalize="off" autocorrect="off" spellcheck="false">
+
+    <label for="keyIn" style="margin-top:14px">License key text</label>
+    <input id="keyIn" type="text" placeholder="OPT-XXXXX-XXXXX-XXXXX-XXXXX" autocapitalize="characters" autocorrect="off" spellcheck="false">
+    <button class="ghost" id="genBtn" type="button">Make a random key for me</button>
+
+    <div class="row" style="margin-top:14px">
+      <div>
+        <label for="expIn">Expires on (leave empty = never)</label>
+        <input id="expIn" type="date">
+      </div>
+    </div>
+    <p class="hint">Dashes and spaces do not matter, and capital letters do not matter: <b>OPT-1A2B</b> and <b>opt1a2b</b> are the same key. Only letters and numbers count.</p>
+
+    <button id="makeBtn" type="button">Make the key line</button>
+    <div class="err" id="errEl" hidden></div>
+  </div>
+
+  <div class="out" id="outCtn" hidden>
+    <div class="card">
+      <div class="lbl"><span>1. Give this to the customer</span><span class="ok">ready</span></div>
+      <pre class="key" id="plainOut"></pre>
+      <button class="ghost" id="copyKey" type="button">Copy the key</button>
+
+      <hr>
+
+      <div class="lbl"><span>2. Paste this line into license-keys.json</span></div>
+      <pre id="lineOut"></pre>
+      <button class="ghost" id="copyLine" type="button">Copy the line</button>
+      <p class="hint">Open <b>license-keys.json</b> in your repo, put the line inside the square brackets of <b>"keys"</b> (just above the closing <b>]</b>), then press <b>Commit changes</b>. No rebuild is needed &mdash; every app picks it up by itself.</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <p class="lbl" style="margin-bottom:8px">To kill a key later</p>
+    <ol class="steps">
+      <li>Find its <b>hash</b> in <b>license-keys.json</b> and delete that line.</li>
+      <li>Or paste the hash inside the <b>"revoked": [ ]</b> list.</li>
+      <li>Commit. The app locks that key the next time it is opened with internet.</li>
+    </ol>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var ALPHABET = "0123456789ABCDEFGHJKMNPQRSTVWXYZ";
+  var el = function (id) { return document.getElementById(id); };
+
+  function normalizeKey(value) {
+    return String(value == null ? "" : value).toUpperCase().replace(/[^A-Z0-9]/g, "");
+  }
+
+  async function sha256Hex(text) {
+    var buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
+    var arr = new Uint8Array(buf), out = "", i;
+    for (i = 0; i < arr.length; i++) out += arr[i].toString(16).padStart(2, "0");
+    return out;
+  }
+
+  function randomKey() {
+    var raw = "", i;
+    var a = new Uint32Array(20);
+    crypto.getRandomValues(a);
+    for (i = 0; i < a.length; i++) raw += ALPHABET[a[i] % ALPHABET.length];
+    return "OPT-" + raw.match(/.{1,5}/g).join("-");
+  }
+
+  function copy(text, btn) {
+    var done = function () { var old = btn.textContent; btn.textContent = "Copied!"; setTimeout(function () { btn.textContent = old; }, 1200); };
+    try {
+      navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+    } catch (e) { fallback(text, done); }
+  }
+  function fallback(text, done) {
+    var ta = document.createElement("textarea");
+    ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  function showError(msg) {
+    var e = el("errEl");
+    e.textContent = msg; e.hidden = false;
+  }
+
+  async function make() {
+    el("errEl").hidden = true;
+    try {
+      if (!window.crypto || !crypto.subtle) throw new Error("This page must be opened over https:// to work.");
+      var normalized = normalizeKey(el("keyIn").value);
+      if (normalized.length < 12) throw new Error("The key must have at least 12 letters/numbers. Longer is stronger - 20 or more is best.");
+      var label = (el("nameIn").value || "customer").trim();
+      var exp = el("expIn").value;
+      var expIso = null;
+      if (exp) {
+        var d = new Date(exp + "T23:59:59.000Z");
+        if (isNaN(d.getTime())) throw new Error("That expiry date did not make sense.");
+        expIso = d.toISOString();
+      }
+      var hash = await sha256Hex(normalized);
+      el("plainOut").textContent = el("keyIn").value.trim();
+      el("lineOut").textContent = '    { "label": "' + label.replace(/"/g, "") + '", "hash": "' + hash + '", "exp": ' + (expIso ? '"' + expIso + '"' : "null") + ' },';
+      el("outCtn").hidden = false;
+      el("outCtn").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    } catch (e) {
+      showError(e.message || String(e));
+    }
+  }
+
+  el("genBtn").addEventListener("click", function () { el("keyIn").value = randomKey(); });
+  el("makeBtn").addEventListener("click", make);
+  el("copyKey").addEventListener("click", function () { copy(el("plainOut").textContent, this); });
+  el("copyLine").addEventListener("click", function () { copy(el("lineOut").textContent, this); });
+  el("keyIn").addEventListener("input", function () { el("errEl").hidden = true; });
+})();
+</script>
+</body>
+</html>

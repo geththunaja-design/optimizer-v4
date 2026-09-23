@@ -1,0 +1,27 @@
+{
+  "_HOW_TO_ADD_A_KEY": [
+    "1. Copy one of the { } lines inside \"keys\".",
+    "2. Give it a new label (the customer name) and put the SHA-256 hash of the key there.",
+    "3. Set exp to a date like \"2026-12-31T23:59:59.000Z\", or null for a key that never expires.",
+    "4. Commit this file. Every app - including APKs people already installed - picks it up by itself.",
+    "To kill a key: move its hash into \"revoked\", or delete its entry. See ADD-LICENSE-KEY.md."
+  ],
+  "keys": [
+    {
+      "label": "owner",
+      "hash": "7542465ffa860f7e064012a87484faf02284619c599b8e8e42a583d1c18810df",
+      "exp": null
+    },
+    {
+      "label": "spare-30d",
+      "hash": "002dac8339fb70b30f56f53b22603a0e0b636539022ef66f17ffd87105a34eb5",
+      "exp": "2026-10-23T09:56:49.946Z"
+    },
+    {
+      "label": "customer-1",
+      "hash": "bcffd5963e041f285e8cb2e930531257b70f122576395b5d1ae508905c682013",
+      "exp": null
+    }
+  ],
+  "revoked": []
+}
