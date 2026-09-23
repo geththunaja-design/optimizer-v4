@@ -353,7 +353,8 @@ class OptimizerEngine(private val activity: Activity, private val native: Native
                 if (Build.VERSION.SDK_INT < 31) return@post
                 stopHintsInternal()
                 val mgr = activity.getSystemService(Context.PERFORMANCE_HINT_SERVICE) as? PerformanceHintManager ?: return@post
-                val holder = HintSession31(mgr.createHintSession(intArrayOf(Process.myTid()), frameNanos()))
+               val session = mgr.createHintSession(intArrayOf(Process.myTid()), frameNanos()) ?: return@post
+val holder = HintSession31(session)
                 hintHolder = holder
                 lastFrameNs = System.nanoTime()
                 val cb = object : Choreographer.FrameCallback {
