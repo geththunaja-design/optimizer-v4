@@ -11,7 +11,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.BatteryManager
 import android.os.Build
-import android.os.Choreographer
+import android.view.Choreographer
 import android.os.Debug
 import android.os.Handler
 import android.os.Looper
@@ -40,7 +40,7 @@ import kotlin.math.min
  * Everything in here is an actual platform API gated by API level, so the same app behaves
  * correctly on Android 7 through Android 15:
  *
- *   Window.setFrameRate            (API 30) - real frame-rate request for this window
+ *   LayoutParams.preferredRefreshRate        - real frame-rate request for this window
  *   LayoutParams.preferredDisplayModeId      - real display mode selection for the FPS cap
  *   Window.setSustainedPerformanceMode (24) - stops the device from scaling clocks down
  *   GameManager.setGameMode        (API 31) - the system's own performance game mode
@@ -92,7 +92,7 @@ class OptimizerEngine(private val activity: Activity, private val native: Native
 
     /** Wrapper kept in its own class so the API-31 types are only ever resolved on API 31+. */
     @RequiresApi(31)
-    private class HintSession31(private val session: PerformanceHintManager.PerformanceHintSession) {
+    private class HintSession31(private val session: PerformanceHintManager.Session) {
         fun report(ns: Long) {
             try { session.reportActualWorkDuration(ns) } catch (t: Throwable) { }
         }
@@ -299,12 +299,6 @@ class OptimizerEngine(private val activity: Activity, private val native: Native
                 val lp = w.attributes
                 lp.preferredRefreshRate = if (targetFps >= 144) 0f else targetFps.toFloat()
                 w.attributes = lp
-                if (Build.VERSION.SDK_INT >= 30) {
-                    w.setFrameRate(
-                        targetFps.toFloat(),
-                        if (targetFps >= 144) FRAME_RATE_COMPATIBILITY_DEFAULT else FRAME_RATE_COMPATIBILITY_FIXED_SOURCE
-                    )
-                }
                 if (Build.VERSION.SDK_INT in 23..29) {
                     val display = w.windowManager?.defaultDisplay
                     val modes = display?.supportedModes
