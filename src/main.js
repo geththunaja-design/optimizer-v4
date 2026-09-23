@@ -300,13 +300,16 @@ function renderLicense() {
   const grid = el("licGrid");
   if (!grid) return;
   const active = !!st.unlocked;
+  const sy = (gate && gate.sync) ? gate.sync() : null;
   const live = st.exp ? st.exp > Date.now() : true;
   kvGrid(grid, [
     ["App", st.appName || APP.name, active],
     ["License status", active ? "verified on this device" : (st.message || "locked \u2014 waiting for a key"), active],
     ["Issued key", st.label ? st.label : "not presented", !!st.label],
     ["Expires", st.exp ? new Date(st.exp).toLocaleString() + (live ? "  (" + fmtLeft(st.exp - Date.now()) + " left)" : "  \u2014 expired") : "unlimited \u2014 never expires", live],
-    ["Keys registered in this build", (gate && gate.keys ? gate.keys.length : 0) + "  (SHA-256 digests only)", true],
+    ["Live key list", sy ? (sy.state === "online" ? "downloaded \u2014 " + sy.count + " keys in force" : (sy.state === "checking" ? "checking\u2026" : "offline \u2014 using this build's list")) : "not available", !!(sy && sy.state === "online")],
+    ["Keys on this device", (gate && gate.keyList ? gate.keyList().length : (gate && gate.keys ? gate.keys.length : 0)) + "  (SHA-256 digests only)", true],
+    ["Keys revoked", (gate && gate.revoked ? gate.revoked().length : 0), true],
     ["Licensed to", st.owner || APP.developer, true],
   ]);
   const owner = el("licOwner");
