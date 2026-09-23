@@ -1,0 +1,67 @@
+name: Build Optimizer APK
+
+# =============================================================================
+#  SETUP: copy this file to  .github/workflows/build-apk.yml  in your repo
+#  (the perchance editor refuses to store a directory whose name starts with a dot,
+#   which is why this template lives here).
+#
+#  Then, on GitHub:  Actions -> Build Optimizer APK -> Run workflow
+#  When it finishes, download the "OptimizerV4-debug-apk" artifact and install it on the phone.
+#  (Allow "install unknown apps" for your browser / file manager first.)
+#
+#  It builds exactly this project: Kotlin + NDK C++ + the bundled web layer.
+# =============================================================================
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Locate the Android project
+        id: locate
+        run: |
+          if [ -f settings.gradle.kts ]; then
+            echo "dir=." >> "$GITHUB_OUTPUT"
+          elif [ -f src/android/settings.gradle.kts ]; then
+            echo "dir=src/android" >> "$GITHUB_OUTPUT"
+          else
+            echo "No Gradle project found: expected settings.gradle.kts at the repo root or in src/android/" >&2
+            exit 1
+          fi
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: android-actions/setup-android@v3
+
+      - name: Install SDK packages
+        run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;26.1.10909125"
+
+      - uses: gradle/actions/setup-gradle@v3
+        with:
+          gradle-version: '8.7'
+
+      - name: Bundle the web layer into the APK assets
+        working-directory: ${{ steps.locate.outputs.dir }}
+        run: |
+          chmod +x tools/sync-web-assets.sh
+          ./tools/sync-web-assets.sh
+
+      - name: Build debug APK
+        working-directory: ${{ steps.locate.outputs.dir }}
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: OptimizerV4-debug-apk
+          path: ${{ steps.locate.outputs.dir }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
