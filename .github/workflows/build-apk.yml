@@ -1,16 +1,8 @@
 name: Build Optimizer APK
 
-# =============================================================================
-#  SETUP: copy this file to  .github/workflows/build-apk.yml  in your repo
-#  (the perchance editor refuses to store a directory whose name starts with a dot,
-#   which is why this template lives here).
-#
-#  Then, on GitHub:  Actions -> Build Optimizer APK -> Run workflow
-#  When it finishes, download the "OptimizerV4-debug-apk" artifact and install it on the phone.
-#  (Allow "install unknown apps" for your browser / file manager first.)
-#
-#  It builds exactly this project: Kotlin + NDK C++ + the bundled web layer.
-# =============================================================================
+# Builds the Android app that lives in src/android/ (Kotlin + NDK C++ + bundled web layer).
+# Actions -> Build Optimizer APK -> Run workflow
+# Download the "OptimizerV4-debug-apk" artifact, unzip, install app-debug.apk on the phone.
 
 on:
   push:
@@ -40,7 +32,7 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: android-actions/setup-android@v3
+      - uses: android-actions/setup-android@v4
 
       - name: Install SDK packages
         run: sdkmanager --install "platforms;android-34" "build-tools;34.0.0" "cmake;3.22.1" "ndk;26.1.10909125"
