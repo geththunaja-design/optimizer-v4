@@ -1,9 +1,9 @@
 name: Deploy to Firebase Hosting
-
-# Publishes the static dashboard (index.html + src/) to Firebase Hosting every time
-# you push to main - so issuing a license key (one line in index.html) goes live by itself.
 #
-# Needs ONE repository secret:  Settings -> Secrets and variables -> Actions
+# Publishes the static dashboard (index.html + src/) to Firebase Hosting every time
+# you push to main, so issuing a license key (one line in index.html) goes live by itself.
+#
+# Needs ONE repository secret:  Settings > Secrets and variables > Actions
 #   name : FIREBASE_SERVICE_ACCOUNT
 #   value: the whole JSON of the service-account private key
 #          (Firebase console -> Project settings -> Service accounts -> Generate new private key)
@@ -21,9 +21,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Show service account
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          printf '%s' "$SA" > sa.json
+          echo "bytes in secret: $(wc -c < sa.json)"
+          node -e "const fs=require('fs');const s=JSON.parse(fs.readFileSync('sa.json','utf8'));console.log('email:',s.client_email);console.log('project:',s.project_id)"
+
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
-          projectId: optimizer4
+          projectId: optimizerv4
           channelId: live
