@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Optimizer V.4.0 - native Android shell
+  ======================================
+  Permissions requested, and what each one can really do for a NON-ROOT app:
+
+    INTERNET                            granted - the app's own network probes, DoH lookups, shaders.
+    ACCESS_NETWORK_STATE                granted - online/offline + network class.
+    VIBRATE                             granted - real haptic feedback.
+    GET_PACKAGE_SIZE                    declared - the app reads its own footprint.
+    REQUEST_IGNORE_BATTERY_OPTIMIZATIONS granted after a user prompt - the only "throttle fix"
+                                        a normal app may ask for. Opens the system Doze dialog.
+    POST_NOTIFICATIONS                  runtime prompt on Android 13+.
+    REQUEST_DELETE_PACKAGES             user-confirmed uninstall prompts only.
+    QUERY_ALL_PACKAGES                  lets the launcher see the installed Free Fire packages.
+                                        Play policy: requires justification for release on Play.
+    KILL_BACKGROUND_PROCESSES           declared for completeness; Android 8+ honours it only for
+                                        the calling app's own processes.
+    CLEAR_APP_CACHE                     protection level signature|privileged. A normal APK can
+                                        declare it but can NEVER hold it - the app clears its own
+                                        cache instead, which is all a non-root app may do.
+
+  No permission on Android can give a non-root app control of another app's CPU governor, GPU
+  clocks, thermal limits or game memory. Nothing in this app pretends otherwise. See README.md.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.KILL_BACKGROUND_PROCESSES" />
+    <uses-permission android:name="android.permission.GET_PACKAGE_SIZE" />
+    <uses-permission android:name="android.permission.CLEAR_APP_CACHE" />
+    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
+
+    <!-- required=false so the app installs on the widest possible range of Android devices -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:glEsVersion="0x00020000" android:required="false" />
+
+    <queries>
+        <package android:name="com.dts.freefireth" />
+        <package android:name="com.dts.freefiremax" />
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+    <application
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:hardwareAccelerated="true"
+        android:largeHeap="true"
+        android:usesCleartextTraffic="false"
+        android:supportsRtl="true"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
+        android:theme="@style/Theme.Optimizer">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:label="@string/app_name"
+            android:launchMode="singleTop"
+            android:screenOrientation="fullSensor"
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboardHidden|uiMode|density|fontScale"
+            android:windowSoftInputMode="adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

@@ -1,0 +1,19 @@
+$meta
+  title = Optimizer V.4.0 — Android Performance Suite
+  description = Live FPS HUD, hardware profiles, shader tuner, ping & DNS tools, touch polling lab and benchmark studio. Built for Android.
+  tags = optimizer, android, fps, performance, gaming, benchmark, dns, ping, shader
+  image = https://user.uploads.dev/file/8816bb59dba6ec09ddbf597fcf5a9dd2.jpg
+  header
+    mode = minimal
+
+// ---------------------------------------------------------------------------
+// HIGH-LEVEL CONFIG — tweak these freely, the app reads them at boot.
+// ---------------------------------------------------------------------------
+appName = Optimizer V.4.0
+appVersion = 4.0.0
+appBuild = V4.0.0-stable
+appTarget = Android 8.0+ (non-root)
+developerName = Aash optimizer
+vipWhatsapp = +94 71 238 6533
+comingSoon = Optimizer V.5.0 — Coming soon, stay connected with us
+defaultTheme = dark
